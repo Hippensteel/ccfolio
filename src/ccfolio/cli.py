@@ -14,7 +14,7 @@ from rich.table import Table
 from rich.panel import Panel
 from rich.text import Text
 
-from chronicle import __version__
+from ccfolio import __version__
 from ccfolio.config import Config
 from ccfolio.database import Database
 from ccfolio.markdown import export_session, render_session

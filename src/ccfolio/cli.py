@@ -1,4 +1,4 @@
-"""CLI interface for Claude Chronicle."""
+"""CLI interface for ccfolio."""
 
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ def get_db(ctx: click.Context) -> Database:
 @click.version_option(version=__version__)
 @click.pass_context
 def main(ctx: click.Context, config_path: str | None) -> None:
-    """Claude Chronicle: Bridge Claude Code conversations into Obsidian."""
+    """ccfolio: Bridge Claude Code conversations into Obsidian."""
     config = Config.load(Path(config_path) if config_path else None)
     config.ensure_dirs()
     db = Database(config.db_path)
@@ -170,7 +170,7 @@ def list_sessions(
     )
 
     if not sessions:
-        console.print("[dim]No sessions found. Run 'chronicle sync' first.[/dim]")
+        console.print("[dim]No sessions found. Run 'ccfolio sync' first.[/dim]")
         return
 
     table = Table(
@@ -378,7 +378,7 @@ def export(
         output_dir = config.get_output_path()
         if not output_dir:
             console.print(
-                "[red]No vault path configured. Use --output or run 'chronicle config init'[/red]"
+                "[red]No vault path configured. Use --output or run 'ccfolio config init'[/red]"
             )
             raise SystemExit(1)
 
@@ -630,7 +630,7 @@ def stats(ctx: click.Context, tools: bool, models: bool) -> None:
     s = db.get_stats()
 
     if not s["total_sessions"]:
-        console.print("[dim]No sessions indexed. Run 'chronicle sync' first.[/dim]")
+        console.print("[dim]No sessions indexed. Run 'ccfolio sync' first.[/dim]")
         return
 
     console.print(Panel(
@@ -643,7 +643,7 @@ def stats(ctx: click.Context, tools: bool, models: bool) -> None:
         f"[bold]Estimated cost:[/bold] ${s['total_cost'] or 0:.2f}\n"
         f"[bold]Favorites:[/bold] {s['favorite_count'] or 0}\n"
         f"[bold]Period:[/bold] {(s['earliest_session'] or '')[:10]} to {(s['latest_session'] or '')[:10]}",
-        title="Chronicle Stats",
+        title="ccfolio Stats",
         border_style="blue",
     ))
 
@@ -713,7 +713,7 @@ def config_show(ctx: click.Context) -> None:
         f"[bold]Output dir:[/bold] {config.obsidian.output_dir}\n"
         f"[bold]Filename template:[/bold] {config.obsidian.filename_template}\n"
         f"[bold]Default tags:[/bold] {', '.join(config.obsidian.default_tags)}",
-        title="Chronicle Config",
+        title="ccfolio Config",
         border_style="blue",
     ))
 
@@ -724,7 +724,7 @@ def config_init(ctx: click.Context) -> None:
     """Interactive configuration setup."""
     config = get_config(ctx)
 
-    console.print("[bold]Claude Chronicle Setup[/bold]")
+    console.print("[bold]ccfolio Setup[/bold]")
     console.print()
 
     # Detect Claude home
@@ -781,13 +781,13 @@ subagent_display = "summary"
 @main.command()
 @click.pass_context
 def mcp(ctx: click.Context) -> None:
-    """Start Chronicle as an MCP server (stdio transport)."""
+    """Start ccfolio as an MCP server (stdio transport)."""
     try:
         from ccfolio.mcp_server import create_server
     except ImportError:
         console.print(
             "[red]MCP dependencies not installed.[/red]\n"
-            "Run: pip install claude-chronicle[mcp]"
+            "Run: pip install ccfolio[mcp]"
         )
         raise SystemExit(1)
 

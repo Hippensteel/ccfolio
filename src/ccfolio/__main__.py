@@ -1,4 +1,4 @@
-"""Allow running as python -m chronicle."""
+"""Allow running as python -m ccfolio."""
 
 from ccfolio.cli import main
 

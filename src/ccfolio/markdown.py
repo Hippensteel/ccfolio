@@ -1,4 +1,4 @@
-"""Obsidian markdown renderer for Claude Chronicle sessions."""
+"""Obsidian markdown renderer for ccfolio sessions."""
 
 from __future__ import annotations
 

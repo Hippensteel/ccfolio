@@ -1,4 +1,4 @@
-"""Sync Claude Code sessions into the Chronicle database."""
+"""Sync Claude Code sessions into the ccfolio database."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ def sync_sessions(
     """Sync sessions from ~/.claude/ into the database.
 
     Args:
-        config: Chronicle configuration
+        config: ccfolio configuration
         db: Database instance
         full: If True, re-index all sessions regardless of mtime
         project_filter: Only sync sessions from matching project path
@@ -117,7 +117,7 @@ def sync_agents(
     """Sync subagent files and link them to parent sessions.
 
     Args:
-        config: Chronicle configuration
+        config: ccfolio configuration
         db: Database instance
         full: If True, re-index all agents regardless of mtime
 

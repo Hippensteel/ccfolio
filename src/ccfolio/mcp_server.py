@@ -1,4 +1,4 @@
-"""MCP server exposing Chronicle's search and session data."""
+"""MCP server exposing ccfolio's search and session data."""
 
 from __future__ import annotations
 
@@ -13,9 +13,9 @@ from ccfolio.pricing import get_model_family
 
 
 def create_server(config: Config) -> FastMCP:
-    """Create and configure the Chronicle MCP server."""
+    """Create and configure the ccfolio MCP server."""
     server = FastMCP(
-        "chronicle",
+        "ccfolio",
         instructions="Search and explore Claude Code conversation history. Use these tools to find past sessions, search conversations, and track costs.",
     )
 

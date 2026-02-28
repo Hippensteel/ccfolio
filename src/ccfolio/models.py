@@ -1,4 +1,4 @@
-"""Data models for Claude Chronicle."""
+"""Data models for ccfolio."""
 
 from __future__ import annotations
 

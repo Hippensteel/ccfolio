@@ -1,4 +1,4 @@
-"""SQLite database operations for Claude Chronicle."""
+"""SQLite database operations for ccfolio."""
 
 from __future__ import annotations
 

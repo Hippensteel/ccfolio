@@ -1,4 +1,4 @@
-"""Core tests for Claude Chronicle — covering known failure modes."""
+"""Core tests for ccfolio — covering known failure modes."""
 
 from __future__ import annotations
 

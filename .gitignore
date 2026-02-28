@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# macOS
+.DS_Store
+
+# Editor
+.zed/
+.idea/
+*.swp
+
+# Chronicle runtime data (user-specific, not for source control)
+*.db
+*.db-shm
+*.db-wal
+config.toml

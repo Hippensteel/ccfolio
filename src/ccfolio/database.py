@@ -177,14 +177,19 @@ class Database:
 
         self.conn.commit()
 
-    def get_session_mtime(self, session_id: str) -> float | None:
-        """Get stored mtime for a session, or None if not indexed."""
-        cursor = self.conn.execute(
-            "SELECT source_mtime FROM sessions WHERE session_id = ?",
-            (session_id,),
-        )
-        row = cursor.fetchone()
-        return row["source_mtime"] if row else None
+    def get_all_session_mtimes(self) -> dict[str, float]:
+        """Get all stored session mtimes as {source_file: mtime} dict."""
+        rows = self.conn.execute(
+            "SELECT source_file, source_mtime FROM sessions WHERE source_file IS NOT NULL"
+        ).fetchall()
+        return {row["source_file"]: row["source_mtime"] for row in rows if row["source_mtime"] is not None}
+
+    def get_all_agent_mtimes(self) -> dict[str, float]:
+        """Get all stored agent mtimes as {agent_id: mtime} dict."""
+        rows = self.conn.execute(
+            "SELECT agent_id, source_mtime FROM session_agents WHERE source_mtime IS NOT NULL"
+        ).fetchall()
+        return {row["agent_id"]: row["source_mtime"] for row in rows}
 
     def upsert_session(self, session: Session, content_text: str = "") -> None:
         """Insert or update a session in the database."""
@@ -327,14 +332,6 @@ class Database:
                 (session_id, sess_row["first_prompt"], sess_row["summary"], combined, files_str),
             )
         self.conn.commit()
-
-    def get_agent_mtime(self, agent_id: str) -> float | None:
-        """Get stored mtime for an agent file, or None if not indexed."""
-        row = self.conn.execute(
-            "SELECT source_mtime FROM session_agents WHERE agent_id = ?",
-            (agent_id,),
-        ).fetchone()
-        return row["source_mtime"] if row else None
 
     def get_parent_session_id_for_agent(self, agent_session_id: str) -> str | None:
         """Find the parent session that has this agent's session ID in its child_agent_ids."""

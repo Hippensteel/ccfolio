@@ -47,6 +47,29 @@ def sync_sessions(
         console.print("[dim]No session files found.[/dim]")
         return stats
 
+    # Batch-load all stored mtimes in one query instead of per-session DB calls
+    stored_mtimes = db.get_all_session_mtimes() if not full else {}
+
+    # Fast-path: check file mtimes against stored and collect only changed sessions
+    changed = []
+    for info in session_infos:
+        filepath = info["filepath"]
+        source_key = str(filepath)
+        try:
+            current_mtime = filepath.stat().st_mtime
+            stored_mtime = stored_mtimes.get(source_key)
+            if not full and stored_mtime is not None and current_mtime <= stored_mtime:
+                stats["skipped"] += 1
+                continue
+            info["_current_mtime"] = current_mtime
+            info["_is_new"] = stored_mtime is None
+            changed.append(info)
+        except OSError:
+            stats["errors"] += 1
+
+    if not changed:
+        return stats
+
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
@@ -54,22 +77,14 @@ def sync_sessions(
         MofNCompleteColumn(),
         console=console,
     ) as progress:
-        task = progress.add_task("Syncing sessions...", total=len(session_infos))
+        task = progress.add_task(
+            f"Syncing {len(changed)} changed sessions...", total=len(changed)
+        )
 
-        for info in session_infos:
+        for info in changed:
             filepath = info["filepath"]
-            session_id = filepath.stem
 
             try:
-                current_mtime = filepath.stat().st_mtime
-                stored_mtime = db.get_session_mtime(session_id)
-
-                if not full and stored_mtime is not None:
-                    if current_mtime <= stored_mtime:
-                        stats["skipped"] += 1
-                        progress.update(task, advance=1)
-                        continue
-
                 session = parse_session_file(
                     filepath=filepath,
                     project_path=info["project_path"],
@@ -95,7 +110,7 @@ def sync_sessions(
 
                 db.upsert_session(session, content_text)
 
-                if stored_mtime is None:
+                if info["_is_new"]:
                     stats["new"] += 1
                 else:
                     stats["updated"] += 1
@@ -134,6 +149,29 @@ def sync_agents(
     if not agent_infos:
         return stats
 
+    # Batch-load all stored agent mtimes in one query
+    stored_mtimes = db.get_all_agent_mtimes() if not full else {}
+
+    # Fast-path: filter to only changed agents
+    changed = []
+    for info in agent_infos:
+        filepath = info["filepath"]
+        agent_id = filepath.stem
+        try:
+            current_mtime = filepath.stat().st_mtime
+            stored_mtime = stored_mtimes.get(agent_id)
+            if not full and stored_mtime is not None and current_mtime <= stored_mtime:
+                stats["skipped"] += 1
+                continue
+            info["_current_mtime"] = current_mtime
+            info["_is_new"] = stored_mtime is None
+            changed.append(info)
+        except OSError:
+            stats["errors"] += 1
+
+    if not changed:
+        return stats
+
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
@@ -141,21 +179,14 @@ def sync_agents(
         MofNCompleteColumn(),
         console=console,
     ) as progress:
-        task = progress.add_task("Syncing agents...", total=len(agent_infos))
+        task = progress.add_task(f"Syncing {len(changed)} changed agents...", total=len(changed))
 
-        for info in agent_infos:
+        for info in changed:
             filepath = info["filepath"]
-            agent_id = filepath.stem  # e.g. "agent-a592e5c"
+            agent_id = filepath.stem
 
             try:
-                current_mtime = filepath.stat().st_mtime
-                stored_mtime = db.get_agent_mtime(agent_id)
-
-                if not full and stored_mtime is not None:
-                    if current_mtime <= stored_mtime:
-                        stats["skipped"] += 1
-                        progress.update(task, advance=1)
-                        continue
+                current_mtime = info["_current_mtime"]
 
                 # Parse the agent file (reuses same parser as regular sessions)
                 agent_session = parse_session_file(
@@ -218,7 +249,7 @@ def sync_agents(
                 if parent_session_id and content_text:
                     db.append_agent_content_to_fts(parent_session_id, content_text)
 
-                if stored_mtime is None:
+                if info["_is_new"]:
                     stats["new"] += 1
                 else:
                     stats["updated"] += 1

@@ -25,7 +25,7 @@ htmlcov/
 .idea/
 *.swp
 
-# Chronicle runtime data (user-specific, not for source control)
+# ccfolio runtime data (user-specific, not for source control)
 *.db
 *.db-shm
 *.db-wal

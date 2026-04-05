@@ -9,7 +9,7 @@ from pathlib import Path
 
 from ccfolio.models import Session, TokenUsage
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -50,7 +50,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     source_file TEXT,
     source_mtime REAL,
     indexed_at TEXT,
-    exported_at TEXT DEFAULT NULL
+    exported_at TEXT DEFAULT NULL,
+    source_cli TEXT DEFAULT 'claude-code'
 );
 
 CREATE TABLE IF NOT EXISTS files_touched (
@@ -67,6 +68,7 @@ CREATE INDEX IF NOT EXISTS idx_sessions_created ON sessions(created_at);
 CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_path);
 CREATE INDEX IF NOT EXISTS idx_sessions_model ON sessions(primary_model);
 CREATE INDEX IF NOT EXISTS idx_sessions_favorited ON sessions(is_favorited);
+CREATE INDEX IF NOT EXISTS idx_sessions_source_cli ON sessions(source_cli);
 
 CREATE TABLE IF NOT EXISTS session_agents (
     agent_id TEXT PRIMARY KEY,
@@ -175,6 +177,16 @@ class Database:
             "DELETE FROM sessions WHERE source_file LIKE '%/agent-%'"
         )
 
+        # v3: Add source_cli column
+        if "source_cli" not in columns:
+            cursor.execute(
+                "ALTER TABLE sessions ADD COLUMN source_cli TEXT DEFAULT 'claude-code'"
+            )
+            # Tag existing Codex sessions by source_file path
+            cursor.execute(
+                "UPDATE sessions SET source_cli = 'codex' WHERE source_file LIKE '%/.codex/%'"
+            )
+
         self.conn.commit()
 
     def get_all_session_mtimes(self) -> dict[str, float]:
@@ -191,7 +203,7 @@ class Database:
         ).fetchall()
         return {row["agent_id"]: row["source_mtime"] for row in rows}
 
-    def upsert_session(self, session: Session, content_text: str = "") -> None:
+    def upsert_session(self, session: Session, content_text: str = "", source_cli: str = "claude-code") -> None:
         """Insert or update a session in the database."""
         now = datetime.utcnow().isoformat() + "Z"
 
@@ -220,11 +232,11 @@ class Database:
                     estimated_cost_usd, files_touched_json,
                     subagent_count, child_agent_ids_json, cc_version, permission_mode,
                     is_favorited, tags_json,
-                    source_file, source_mtime, indexed_at
+                    source_file, source_mtime, indexed_at, source_cli
                 ) VALUES (
                     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                 )""",
                 (
                     session.session_id,
@@ -260,6 +272,7 @@ class Database:
                     session.source_file,
                     session.source_mtime,
                     now,
+                    source_cli,
                 ),
             )
 
@@ -389,6 +402,7 @@ class Database:
         before: str | None = None,
         sort_by: str = "date",
         limit: int | None = None,
+        source_cli: str | None = None,
     ) -> list[dict]:
         """List sessions with optional filters."""
         conditions = []
@@ -411,6 +425,9 @@ class Database:
         if before:
             conditions.append("created_at <= ?")
             params.append(before)
+        if source_cli:
+            conditions.append("source_cli = ?")
+            params.append(source_cli)
 
         where = " AND ".join(conditions) if conditions else "1=1"
 
@@ -704,7 +721,9 @@ class Database:
         ).fetchall()
         return [dict(row) for row in rows]
 
-    def get_sessions_needing_export(self) -> list[dict]:
+    def get_sessions_needing_export(
+        self, exclude_projects: list[str] | None = None
+    ) -> list[dict]:
         """Find sessions that were indexed/updated after their last export."""
         rows = self.conn.execute(
             """SELECT * FROM sessions
@@ -712,7 +731,17 @@ class Database:
                OR indexed_at > exported_at
             ORDER BY created_at DESC"""
         ).fetchall()
-        return [dict(row) for row in rows]
+        sessions = [dict(row) for row in rows]
+        if exclude_projects:
+            patterns = [p.lower() for p in exclude_projects]
+            sessions = [
+                s for s in sessions
+                if not any(
+                    p in (s.get("project_path") or "").lower()
+                    for p in patterns
+                )
+            ]
+        return sessions
 
     def mark_exported(self, session_id: str) -> None:
         """Mark a session as exported."""

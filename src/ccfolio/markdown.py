@@ -18,10 +18,11 @@ def render_session(
     default_tags: list[str] | None = None,
     redact_paths: bool = False,
     subagents: list[dict] | None = None,
+    source_cli: str = "claude-code",
 ) -> str:
     """Render a session as Obsidian-compatible markdown."""
     parts = []
-    parts.append(_render_frontmatter(session, default_tags or ["Claude-Session"], redact=redact_paths))
+    parts.append(_render_frontmatter(session, default_tags or ["Claude-Session"], redact=redact_paths, source_cli=source_cli))
     parts.append("")
     parts.append(f"# {session.title}")
     parts.append("")
@@ -118,11 +119,12 @@ def render_session(
     return "\n".join(parts)
 
 
-def _render_frontmatter(session: Session, default_tags: list[str], redact: bool = False) -> str:
+def _render_frontmatter(session: Session, default_tags: list[str], redact: bool = False, source_cli: str = "claude-code") -> str:
     """Render YAML frontmatter."""
     lines = ["---"]
 
     lines.append("type: Claude-Session")
+    lines.append(f"source_cli: {source_cli}")
     lines.append(f'session_id: "{session.session_id}"')
 
     if session.slug:
@@ -170,6 +172,8 @@ def _render_frontmatter(session: Session, default_tags: list[str], redact: bool 
 
     # Tags
     tags = list(default_tags)
+    if source_cli == "codex":
+        tags.append("Codex-Session")
     if session.primary_model:
         family = get_model_family(session.primary_model)
         if family != "Unknown":
@@ -348,6 +352,7 @@ def export_session(
     filename_template: str = "{date} - {title}.md",
     redact_paths: bool = False,
     subagents: list[dict] | None = None,
+    source_cli: str = "claude-code",
 ) -> Path:
     """Export a session to an Obsidian markdown file.
 
@@ -364,6 +369,7 @@ def export_session(
         default_tags=default_tags,
         redact_paths=redact_paths,
         subagents=subagents,
+        source_cli=source_cli,
     )
 
     output_dir.mkdir(parents=True, exist_ok=True)

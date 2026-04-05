@@ -20,7 +20,8 @@ from ccfolio.database import Database
 from ccfolio.markdown import export_session, render_session
 from ccfolio.parser import parse_session_file
 from ccfolio.pricing import get_model_family
-from ccfolio.sync import sync_agents, sync_sessions
+from ccfolio.codex_parser import parse_codex_session_file
+from ccfolio.sync import sync_agents, sync_codex_sessions, sync_sessions
 
 console = Console()
 
@@ -31,6 +32,15 @@ def get_config(ctx: click.Context) -> Config:
 
 def get_db(ctx: click.Context) -> Database:
     return ctx.obj["db"]
+
+
+def _parse_source(source_file: str, source_cli: str = "claude-code", **kwargs) -> "Session":
+    """Parse a session source file using the correct parser for its CLI type."""
+    from ccfolio.models import Session  # noqa: F811
+    filepath = Path(source_file)
+    if source_cli == "codex" or "/.codex/" in source_file:
+        return parse_codex_session_file(filepath, **kwargs)
+    return parse_session_file(filepath, **kwargs)
 
 
 @click.group()
@@ -56,24 +66,39 @@ def main(ctx: click.Context, config_path: str | None) -> None:
 @main.command()
 @click.option("--full", is_flag=True, help="Re-index all sessions regardless of changes")
 @click.option("--project", default=None, help="Only sync sessions from matching project")
+@click.option("--source", "source_cli", default=None,
+              type=click.Choice(["claude-code", "codex", "all"]),
+              help="Only sync from specific CLI source")
 @click.pass_context
-def sync(ctx: click.Context, full: bool, project: str | None) -> None:
-    """Index new and changed sessions from Claude Code."""
+def sync(ctx: click.Context, full: bool, project: str | None, source_cli: str | None) -> None:
+    """Index new and changed sessions from all configured CLI sources."""
     config = get_config(ctx)
     db = get_db(ctx)
 
-    if not config.claude_home.exists():
-        console.print(f"[red]Claude home not found: {config.claude_home}[/red]")
-        raise SystemExit(1)
+    sync_cc = source_cli in (None, "all", "claude-code") and config.sources.claude_code
+    sync_cx = source_cli in (None, "all", "codex") and config.sources.codex
 
-    stats = sync_sessions(config, db, full=full, project_filter=project)
+    if sync_cc:
+        if config.claude_home.exists():
+            stats = sync_sessions(config, db, full=full, project_filter=project)
+            console.print(
+                f"[green]Claude Code:[/green] {stats['new']} new, {stats['updated']} updated, "
+                f"{stats['skipped']} unchanged, {stats['errors']} errors "
+                f"(of {stats['total']} total)"
+            )
+        else:
+            console.print(f"[dim]Claude home not found: {config.claude_home}[/dim]")
 
-    console.print()
-    console.print(
-        f"[green]Synced:[/green] {stats['new']} new, {stats['updated']} updated, "
-        f"{stats['skipped']} unchanged, {stats['errors']} errors "
-        f"(of {stats['total']} total)"
-    )
+    if sync_cx:
+        if config.codex_home.exists():
+            codex_stats = sync_codex_sessions(config, db, full=full)
+            console.print(
+                f"[green]Codex CLI:[/green] {codex_stats['new']} new, {codex_stats['updated']} updated, "
+                f"{codex_stats['skipped']} unchanged, {codex_stats['errors']} errors "
+                f"(of {codex_stats['total']} total)"
+            )
+        else:
+            console.print(f"[dim]Codex home not found: {config.codex_home}[/dim]")
 
 
 # ── update ───────────────────────────────────────────────────────────
@@ -85,21 +110,31 @@ def update(ctx: click.Context) -> None:
     config = get_config(ctx)
     db = get_db(ctx)
 
-    if not config.claude_home.exists():
-        console.print(f"[red]Claude home not found: {config.claude_home}[/red]")
-        raise SystemExit(1)
+    new_or_updated = 0
 
-    # Sync sessions
-    stats = sync_sessions(config, db, full=False)
-    new_or_updated = stats["new"] + stats["updated"]
+    # Sync Claude Code sessions
+    if config.sources.claude_code and config.claude_home.exists():
+        stats = sync_sessions(config, db, full=False)
+        cc_changed = stats["new"] + stats["updated"]
+        new_or_updated += cc_changed
+        if cc_changed:
+            console.print(
+                f"[green]Claude Code:[/green] {stats['new']} new, {stats['updated']} updated"
+            )
+
+    # Sync Codex sessions
+    if config.sources.codex and config.codex_home.exists():
+        codex_stats = sync_codex_sessions(config, db, full=False)
+        cx_changed = codex_stats["new"] + codex_stats["updated"]
+        new_or_updated += cx_changed
+        if cx_changed:
+            console.print(
+                f"[green]Codex CLI:[/green] {codex_stats['new']} new, {codex_stats['updated']} updated"
+            )
 
     if new_or_updated == 0:
         console.print("[dim]Everything up to date.[/dim]")
         return
-
-    console.print(
-        f"[green]Synced:[/green] {stats['new']} new, {stats['updated']} updated"
-    )
 
     # Sync agents (links them to parents, appends content to parent FTS)
     agent_stats = sync_agents(config, db, full=False)
@@ -114,7 +149,9 @@ def update(ctx: click.Context) -> None:
         console.print("[dim]No vault configured, skipping export.[/dim]")
         return
 
-    sessions = db.get_sessions_needing_export()
+    sessions = db.get_sessions_needing_export(
+        exclude_projects=config.export.exclude_projects or None
+    )
     if not sessions:
         return
 
@@ -143,6 +180,9 @@ def update(ctx: click.Context) -> None:
 @click.option("--before", default=None, help="Sessions before date (YYYY-MM-DD)")
 @click.option("--sort", "sort_by", default="date",
               type=click.Choice(["date", "cost", "messages", "tokens"]))
+@click.option("--source", "source_cli", default=None,
+              type=click.Choice(["claude-code", "codex"]),
+              help="Filter by CLI source")
 @click.pass_context
 def list_sessions(
     ctx: click.Context,
@@ -154,6 +194,7 @@ def list_sessions(
     after: str | None,
     before: str | None,
     sort_by: str,
+    source_cli: str | None,
 ) -> None:
     """List indexed sessions."""
     db = get_db(ctx)
@@ -167,6 +208,7 @@ def list_sessions(
         before=before,
         sort_by=sort_by,
         limit=recent,
+        source_cli=source_cli,
     )
 
     if not sessions:
@@ -179,12 +221,19 @@ def list_sessions(
     )
     table.add_column("#", style="dim", width=4, no_wrap=True)
     table.add_column("", width=1, no_wrap=True)  # favorite star
+    table.add_column("Src", width=3, no_wrap=True)
     table.add_column("Date", width=10, no_wrap=True)
     table.add_column("Title", ratio=1, no_wrap=True, overflow="ellipsis")
     table.add_column("Msgs", justify="right", width=5, no_wrap=True)
     table.add_column("Tools", justify="right", width=5, no_wrap=True)
     table.add_column("Model", width=7, no_wrap=True)
     table.add_column("Cost", justify="right", width=7, no_wrap=True)
+
+    SOURCE_BADGES = {
+        "claude-code": "[blue]CC[/blue]",
+        "codex": "[green]CX[/green]",
+        "gemini": "[yellow]GM[/yellow]",
+    }
 
     for i, s in enumerate(sessions, 1):
         date = s["created_at"][:10] if s["created_at"] else "—"
@@ -206,10 +255,12 @@ def list_sessions(
         model_fam = get_model_family(s["primary_model"]) if s["primary_model"] else "—"
         cost = f"${s['estimated_cost_usd']:.2f}" if s["estimated_cost_usd"] else "—"
         fav = "[yellow]*[/yellow]" if s["is_favorited"] else ""
+        src = SOURCE_BADGES.get(s.get("source_cli", "claude-code"), "??")
 
         table.add_row(
             str(i),
             fav,
+            src,
             date,
             title,
             str(msgs),
@@ -254,7 +305,11 @@ def show(ctx: click.Context, session_id: str, raw: bool) -> None:
         console.print(f"[red]Source file missing: {source}[/red]")
         raise SystemExit(1)
 
-    session = parse_session_file(Path(source), include_turns=True)
+    source_cli = record.get("source_cli", "claude-code")
+    if source_cli == "codex" or "/.codex/" in source:
+        session = parse_codex_session_file(Path(source), include_turns=True)
+    else:
+        session = parse_session_file(Path(source), include_turns=True)
     session.is_favorited = bool(record["is_favorited"])
     session.tags = json.loads(record["tags_json"])
     session.summary = record["summary"] or session.summary
@@ -266,6 +321,7 @@ def show(ctx: click.Context, session_id: str, raw: bool) -> None:
         vault_path=config.obsidian.vault_path,
         collapsed_tools=False,  # Show expanded in terminal
         tool_result_max=config.obsidian.tool_result_max_length,
+        source_cli=source_cli,
     )
 
     console.print(Panel(
@@ -405,7 +461,9 @@ def export(
         )
     else:
         # Smart: only export sessions that were indexed after last export
-        sessions = db.get_sessions_needing_export()
+        sessions = db.get_sessions_needing_export(
+            exclude_projects=config.export.exclude_projects or None
+        )
         if favorites:
             sessions = [s for s in sessions if s["is_favorited"]]
         if after:
@@ -440,22 +498,29 @@ def _export_one(record: dict, output_dir: Path, config: Config, db: Database, re
         console.print(f"[yellow]Source missing: {source}[/yellow]")
         return
 
-    # Get sessions-index for this project
-    sessions_index = None
-    idx_file = Path(source).parent / "sessions-index.json"
-    if idx_file.exists():
-        try:
-            sessions_index = json.loads(idx_file.read_text())
-        except (json.JSONDecodeError, OSError):
-            pass
+    source_cli = record.get("source_cli", "claude-code")
 
-    session = parse_session_file(
-        Path(source),
-        project_path=record["project_path"],
-        project_encoded=record["project_encoded"],
-        include_turns=True,
-        sessions_index=sessions_index,
-    )
+    # Parse with the correct parser for this CLI source
+    if source_cli == "codex" or "/.codex/" in source:
+        session = parse_codex_session_file(Path(source), include_turns=True)
+    else:
+        # Get sessions-index for Claude Code projects
+        sessions_index = None
+        idx_file = Path(source).parent / "sessions-index.json"
+        if idx_file.exists():
+            try:
+                sessions_index = json.loads(idx_file.read_text())
+            except (json.JSONDecodeError, OSError):
+                pass
+
+        session = parse_session_file(
+            Path(source),
+            project_path=record["project_path"],
+            project_encoded=record["project_encoded"],
+            include_turns=True,
+            sessions_index=sessions_index,
+        )
+
     session.is_favorited = bool(record["is_favorited"])
     session.tags = json.loads(record["tags_json"])
     session.summary = record["summary"] or session.summary
@@ -473,6 +538,7 @@ def _export_one(record: dict, output_dir: Path, config: Config, db: Database, re
         filename_template=config.obsidian.filename_template,
         redact_paths=redact,
         subagents=subagents or None,
+        source_cli=source_cli,
     )
     console.print(f"  [green]Exported:[/green] {path.name}")
 

@@ -42,19 +42,85 @@ MODEL_PRICING: dict[str, dict[str, float]] = {
     },
 }
 
+# OpenAI pricing per million tokens (USD)
+# Updated: 2026-04-04
+# Note: Codex CLI reasoning_output_tokens are added to output_tokens before costing
+OPENAI_PRICING: dict[str, dict[str, float]] = {
+    "gpt-5.4": {
+        "input": 2.50,
+        "output": 10.00,
+        "cache_creation": 0.0,
+        "cache_read": 1.25,
+    },
+    "gpt-5.2": {
+        "input": 2.50,
+        "output": 10.00,
+        "cache_creation": 0.0,
+        "cache_read": 1.25,
+    },
+    "gpt-5.2-codex": {
+        "input": 2.50,
+        "output": 10.00,
+        "cache_creation": 0.0,
+        "cache_read": 1.25,
+    },
+    "gpt-4.1": {
+        "input": 2.00,
+        "output": 8.00,
+        "cache_creation": 0.0,
+        "cache_read": 0.50,
+    },
+    "gpt-4.1-mini": {
+        "input": 0.40,
+        "output": 1.60,
+        "cache_creation": 0.0,
+        "cache_read": 0.10,
+    },
+    "gpt-4.1-nano": {
+        "input": 0.10,
+        "output": 0.40,
+        "cache_creation": 0.0,
+        "cache_read": 0.025,
+    },
+    "o3": {
+        "input": 2.00,
+        "output": 8.00,
+        "cache_creation": 0.0,
+        "cache_read": 0.50,
+    },
+    "o4-mini": {
+        "input": 1.10,
+        "output": 4.40,
+        "cache_creation": 0.0,
+        "cache_read": 0.275,
+    },
+}
+
+# Merge all pricing
+MODEL_PRICING.update(OPENAI_PRICING)
+
 # Alias mapping for model families
 MODEL_FAMILY: dict[str, str] = {}
 for model_id in MODEL_PRICING:
-    if "opus" in model_id:
+    lower = model_id.lower()
+    if "opus" in lower:
         MODEL_FAMILY[model_id] = "Opus"
-    elif "sonnet" in model_id:
+    elif "sonnet" in lower:
         MODEL_FAMILY[model_id] = "Sonnet"
-    elif "haiku" in model_id:
+    elif "haiku" in lower:
         MODEL_FAMILY[model_id] = "Haiku"
+    elif lower.startswith("gpt-5"):
+        MODEL_FAMILY[model_id] = "GPT-5"
+    elif lower.startswith("gpt-4"):
+        MODEL_FAMILY[model_id] = "GPT-4"
+    elif lower.startswith("o3"):
+        MODEL_FAMILY[model_id] = "o3"
+    elif lower.startswith("o4"):
+        MODEL_FAMILY[model_id] = "o4"
 
 
 def get_model_family(model_id: str) -> str:
-    """Get the family name (Opus, Sonnet, Haiku) for a model ID."""
+    """Get the family name for a model ID."""
     if model_id in MODEL_FAMILY:
         return MODEL_FAMILY[model_id]
     # Heuristic fallback
@@ -65,6 +131,14 @@ def get_model_family(model_id: str) -> str:
         return "Sonnet"
     elif "haiku" in lower:
         return "Haiku"
+    elif lower.startswith("gpt-5"):
+        return "GPT-5"
+    elif lower.startswith("gpt-4"):
+        return "GPT-4"
+    elif lower.startswith("o3"):
+        return "o3"
+    elif lower.startswith("o4"):
+        return "o4"
     return "Unknown"
 
 

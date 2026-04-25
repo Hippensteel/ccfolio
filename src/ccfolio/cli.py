@@ -21,6 +21,7 @@ from ccfolio.markdown import export_session, render_session
 from ccfolio.parser import parse_session_file
 from ccfolio.pricing import get_model_family
 from ccfolio.codex_parser import parse_codex_session_file
+from ccfolio.gemini_parser import parse_gemini_session_file
 from ccfolio.sync import sync_agents, sync_codex_sessions, sync_sessions
 
 console = Console()
@@ -40,6 +41,8 @@ def _parse_source(source_file: str, source_cli: str = "claude-code", **kwargs) -
     filepath = Path(source_file)
     if source_cli == "codex" or "/.codex/" in source_file:
         return parse_codex_session_file(filepath, **kwargs)
+    if source_cli == "gemini" or "/.gemini/" in source_file:
+        return parse_gemini_session_file(filepath, **kwargs)
     return parse_session_file(filepath, **kwargs)
 
 
@@ -67,7 +70,7 @@ def main(ctx: click.Context, config_path: str | None) -> None:
 @click.option("--full", is_flag=True, help="Re-index all sessions regardless of changes")
 @click.option("--project", default=None, help="Only sync sessions from matching project")
 @click.option("--source", "source_cli", default=None,
-              type=click.Choice(["claude-code", "codex", "all"]),
+              type=click.Choice(["claude-code", "codex", "gemini", "all"]),
               help="Only sync from specific CLI source")
 @click.pass_context
 def sync(ctx: click.Context, full: bool, project: str | None, source_cli: str | None) -> None:
@@ -77,6 +80,7 @@ def sync(ctx: click.Context, full: bool, project: str | None, source_cli: str | 
 
     sync_cc = source_cli in (None, "all", "claude-code") and config.sources.claude_code
     sync_cx = source_cli in (None, "all", "codex") and config.sources.codex
+    sync_gm = source_cli in (None, "all", "gemini") and config.sources.gemini
 
     if sync_cc:
         if config.claude_home.exists():
@@ -99,6 +103,18 @@ def sync(ctx: click.Context, full: bool, project: str | None, source_cli: str | 
             )
         else:
             console.print(f"[dim]Codex home not found: {config.codex_home}[/dim]")
+
+    if sync_gm:
+        if config.gemini_home.exists():
+            from ccfolio.sync import sync_gemini_sessions
+            gm_stats = sync_gemini_sessions(config, db, full=full)
+            console.print(
+                f"[green]Gemini CLI:[/green] {gm_stats['new']} new, {gm_stats['updated']} updated, "
+                f"{gm_stats['skipped']} unchanged, {gm_stats['errors']} errors "
+                f"(of {gm_stats['total']} total)"
+            )
+        else:
+            console.print(f"[dim]Gemini home not found: {config.gemini_home}[/dim]")
 
 
 # ── update ───────────────────────────────────────────────────────────
@@ -130,6 +146,17 @@ def update(ctx: click.Context) -> None:
         if cx_changed:
             console.print(
                 f"[green]Codex CLI:[/green] {codex_stats['new']} new, {codex_stats['updated']} updated"
+            )
+
+    # Sync Gemini sessions
+    if config.sources.gemini and config.gemini_home.exists():
+        from ccfolio.sync import sync_gemini_sessions
+        gm_stats = sync_gemini_sessions(config, db, full=False)
+        gm_changed = gm_stats["new"] + gm_stats["updated"]
+        new_or_updated += gm_changed
+        if gm_changed:
+            console.print(
+                f"[green]Gemini CLI:[/green] {gm_stats['new']} new, {gm_stats['updated']} updated"
             )
 
     if new_or_updated == 0:
@@ -181,7 +208,7 @@ def update(ctx: click.Context) -> None:
 @click.option("--sort", "sort_by", default="date",
               type=click.Choice(["date", "cost", "messages", "tokens"]))
 @click.option("--source", "source_cli", default=None,
-              type=click.Choice(["claude-code", "codex"]),
+              type=click.Choice(["claude-code", "codex", "gemini"]),
               help="Filter by CLI source")
 @click.pass_context
 def list_sessions(
@@ -308,6 +335,8 @@ def show(ctx: click.Context, session_id: str, raw: bool) -> None:
     source_cli = record.get("source_cli", "claude-code")
     if source_cli == "codex" or "/.codex/" in source:
         session = parse_codex_session_file(Path(source), include_turns=True)
+    elif source_cli == "gemini" or "/.gemini/" in source:
+        session = parse_gemini_session_file(Path(source), include_turns=True)
     else:
         session = parse_session_file(Path(source), include_turns=True)
     session.is_favorited = bool(record["is_favorited"])
@@ -503,6 +532,8 @@ def _export_one(record: dict, output_dir: Path, config: Config, db: Database, re
     # Parse with the correct parser for this CLI source
     if source_cli == "codex" or "/.codex/" in source:
         session = parse_codex_session_file(Path(source), include_turns=True)
+    elif source_cli == "gemini" or "/.gemini/" in source:
+        session = parse_gemini_session_file(Path(source), include_turns=True)
     else:
         # Get sessions-index for Claude Code projects
         sessions_index = None

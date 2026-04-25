@@ -11,6 +11,7 @@ from ccfolio.autotitle import generate_auto_title
 from ccfolio.codex_parser import discover_codex_sessions, parse_codex_session_file
 from ccfolio.config import Config
 from ccfolio.database import Database
+from ccfolio.gemini_parser import discover_gemini_sessions, parse_gemini_session_file
 from ccfolio.parser import discover_agent_files, discover_sessions, parse_session_file
 
 console = Console()
@@ -353,6 +354,98 @@ def sync_agents(
             except Exception as e:
                 stats["errors"] += 1
                 console.print(f"[red]Error parsing agent {filepath.name}: {e}[/red]")
+
+            progress.update(task, advance=1)
+
+    return stats
+
+
+def sync_gemini_sessions(
+    config: Config,
+    db: Database,
+    full: bool = False,
+) -> dict:
+    """Sync Gemini CLI sessions from ~/.gemini/tmp/*/chats/ into the database.
+
+    Args:
+        config: ccfolio configuration
+        db: Database instance
+        full: If True, re-index all sessions regardless of mtime
+
+    Returns:
+        Dict with counts: new, updated, skipped, errors
+    """
+    stats = {"new": 0, "updated": 0, "skipped": 0, "errors": 0, "total": 0}
+
+    session_infos = discover_gemini_sessions(config.gemini_home)
+    stats["total"] = len(session_infos)
+
+    if not session_infos:
+        return stats
+
+    stored_mtimes = db.get_all_session_mtimes() if not full else {}
+
+    changed = []
+    for info in session_infos:
+        filepath = info["filepath"]
+        source_key = str(filepath)
+        try:
+            current_mtime = filepath.stat().st_mtime
+            stored_mtime = stored_mtimes.get(source_key)
+            if not full and stored_mtime is not None and current_mtime <= stored_mtime:
+                stats["skipped"] += 1
+                continue
+            info["_current_mtime"] = current_mtime
+            info["_is_new"] = stored_mtime is None
+            changed.append(info)
+        except OSError:
+            stats["errors"] += 1
+
+    if not changed:
+        return stats
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        MofNCompleteColumn(),
+        console=console,
+    ) as progress:
+        task = progress.add_task(
+            f"Syncing {len(changed)} Gemini sessions...", total=len(changed)
+        )
+
+        for info in changed:
+            filepath = info["filepath"]
+
+            try:
+                session = parse_gemini_session_file(
+                    filepath=filepath,
+                    include_turns=True,
+                )
+
+                if not session.custom_title and not session.summary:
+                    session.summary = generate_auto_title(session)
+
+                content_parts = []
+                for turn in session.turns:
+                    if turn.text_content.strip():
+                        content_parts.append(turn.text_content.strip())
+                content_text = "\n\n".join(content_parts)
+
+                if len(content_text) > 50000:
+                    content_text = content_text[:50000]
+
+                db.upsert_session(session, content_text, source_cli="gemini")
+
+                if info["_is_new"]:
+                    stats["new"] += 1
+                else:
+                    stats["updated"] += 1
+
+            except Exception as e:
+                stats["errors"] += 1
+                console.print(f"[red]Error parsing Gemini {filepath.name}: {e}[/red]")
 
             progress.update(task, advance=1)
 

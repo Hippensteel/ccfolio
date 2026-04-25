@@ -21,6 +21,7 @@ DEFAULT_CONFIG_FILE = DEFAULT_CONFIG_DIR / "config.toml"
 DEFAULT_DB_PATH = DEFAULT_CONFIG_DIR / "ccfolio.db"
 DEFAULT_CLAUDE_HOME = Path.home() / ".claude"
 DEFAULT_CODEX_HOME = Path.home() / ".codex"
+DEFAULT_GEMINI_HOME = Path.home() / ".gemini"
 
 
 @dataclass
@@ -44,13 +45,14 @@ class ExportConfig:
 class SourcesConfig:
     claude_code: bool = True
     codex: bool = True
-    gemini: bool = False  # not yet supported - encrypted protobuf
+    gemini: bool = True
 
 
 @dataclass
 class Config:
     claude_home: Path = field(default_factory=lambda: DEFAULT_CLAUDE_HOME)
     codex_home: Path = field(default_factory=lambda: DEFAULT_CODEX_HOME)
+    gemini_home: Path = field(default_factory=lambda: DEFAULT_GEMINI_HOME)
     db_path: Path = field(default_factory=lambda: DEFAULT_DB_PATH)
     billing_mode: str = "both"  # api | max | both
     obsidian: ObsidianConfig = field(default_factory=ObsidianConfig)
@@ -66,6 +68,7 @@ class Config:
         # Environment variable overrides (checked first, lowest priority after file)
         env_claude_home = os.environ.get("CCFOLIO_CLAUDE_HOME")
         env_codex_home = os.environ.get("CCFOLIO_CODEX_HOME")
+        env_gemini_home = os.environ.get("CCFOLIO_GEMINI_HOME")
         env_vault = os.environ.get("CCFOLIO_VAULT_PATH")
         env_db = os.environ.get("CCFOLIO_DB_PATH")
 
@@ -80,6 +83,8 @@ class Config:
                 config.claude_home = Path(general["claude_home"]).expanduser()
             if "codex_home" in general:
                 config.codex_home = Path(general["codex_home"]).expanduser()
+            if "gemini_home" in general:
+                config.gemini_home = Path(general["gemini_home"]).expanduser()
             if "db_path" in general:
                 config.db_path = Path(general["db_path"]).expanduser()
             if "billing_mode" in general:
@@ -118,6 +123,8 @@ class Config:
             config.claude_home = Path(env_claude_home).expanduser()
         if env_codex_home:
             config.codex_home = Path(env_codex_home).expanduser()
+        if env_gemini_home:
+            config.gemini_home = Path(env_gemini_home).expanduser()
         if env_vault:
             config.obsidian.vault_path = str(Path(env_vault).expanduser())
         if env_db:

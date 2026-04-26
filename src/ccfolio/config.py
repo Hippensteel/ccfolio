@@ -42,6 +42,22 @@ class ExportConfig:
 
 
 @dataclass
+class FilterConfig:
+    """Filter sessions out of vault export.
+
+    `min_user_turns` skips sessions whose `user_message_count` is below the
+    threshold. Background-agent runs are typically 1 user turn (the kickoff
+    prompt) followed by autonomous tool work; real conversations have multiple
+    back-and-forth turns. Default 0 = no filtering (preserve prior behavior).
+
+    Filtering is applied at export time, not sync time — sessions are still
+    written to the DB so cost/usage queries see them, just not exported as
+    markdown to the vault.
+    """
+    min_user_turns: int = 0
+
+
+@dataclass
 class SourcesConfig:
     claude_code: bool = True
     codex: bool = True
@@ -57,6 +73,7 @@ class Config:
     billing_mode: str = "both"  # api | max | both
     obsidian: ObsidianConfig = field(default_factory=ObsidianConfig)
     export: ExportConfig = field(default_factory=ExportConfig)
+    filter: FilterConfig = field(default_factory=FilterConfig)
     sources: SourcesConfig = field(default_factory=SourcesConfig)
     config_file: Path = field(default_factory=lambda: DEFAULT_CONFIG_FILE)
 
@@ -106,6 +123,11 @@ class Config:
             if exp:
                 if "exclude_projects" in exp:
                     config.export.exclude_projects = exp["exclude_projects"]
+
+            filt = data.get("filter", {})
+            if filt:
+                if "min_user_turns" in filt:
+                    config.filter.min_user_turns = int(filt["min_user_turns"])
 
             sources = data.get("sources", {})
             if sources:

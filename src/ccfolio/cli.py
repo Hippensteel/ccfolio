@@ -502,6 +502,27 @@ def export(
         console.print("[dim]No sessions need exporting.[/dim]")
         return
 
+    # Apply min_user_turns filter (skip background-agent runs etc.)
+    # Single-session export (`ccfolio export <id>`) is exempt — that path
+    # returns early above. Filter only the batch path.
+    min_turns = config.filter.min_user_turns
+    filtered_out = 0
+    if min_turns > 0:
+        kept = []
+        for s in sessions:
+            if (s.get("user_message_count") or 0) < min_turns:
+                filtered_out += 1
+                # Mark as exported so we don't reconsider on every run
+                db.mark_exported(s["session_id"])
+            else:
+                kept.append(s)
+        sessions = kept
+        if filtered_out:
+            console.print(
+                f"[dim]Filtered {filtered_out} sessions below "
+                f"min_user_turns={min_turns} threshold[/dim]"
+            )
+
     exported = 0
     errors = 0
     for record in sessions:

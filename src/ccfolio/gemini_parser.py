@@ -133,15 +133,16 @@ def parse_gemini_session_file(
         data = json.load(f)
 
     session_id = data.get("sessionId", filepath.stem)
+    # Project name comes from the parent directory (~/.gemini/tmp/<project>/chats/<file>),
+    # not the JSON's `projectHash`. The hash is an opaque internal Google identifier;
+    # the directory name is the human-meaningful project ("mainframe", "hypothesis-engine").
+    project_dir = filepath.parent.parent if filepath.parent.name == "chats" else filepath.parent
     session = Session(
         session_id=session_id,
         source_file=str(filepath),
         source_mtime=filepath.stat().st_mtime,
-        project_path=data.get("projectHash", "")
+        project_path=str(project_dir),
     )
-    
-    # Gemini doesn't track `project_path` directly in the JSON, but the CLI puts 
-    # the hash in `projectHash`. Let's just track what we can.
     
     first_user_ts = parse_timestamp(data.get("startTime"))
     last_ts = parse_timestamp(data.get("lastUpdated"))

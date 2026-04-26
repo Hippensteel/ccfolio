@@ -11,12 +11,18 @@ from ccfolio.models import Session
 # Current user's home directory name (for filtering from topics)
 _USERNAME = Path.home().name
 
+# Hex-hash strings (opaque project identifiers, esp. from Gemini) make
+# useless title topics. Skip anything that's all hex and 30+ chars.
+_HEX_HASH_RE = re.compile(r"^[A-Fa-f0-9]{30,}$")
+
 # Directories that are too generic to be useful as topics
 SKIP_DIRS = {
     "users", "home", "src", "lib", "bin", "var", "tmp", "opt",
     "etc", "data", "test", "tests", "docs", "build", "dist",
     ".venv", "venv", "node_modules", ".git", "__pycache__",
     "documents",
+    # CLI home directories — these are container dirs, not project names
+    ".claude", ".codex", ".gemini",
 }
 
 # Common parent dirs to skip through to find the real project name
@@ -122,6 +128,9 @@ def _project_topic(project_path: str) -> str:
         if lower in SKIP_DIRS or lower == _USERNAME.lower() or part == "/":
             continue
         if part.lower() in {d.lower() for d in CONTAINER_DIRS}:
+            continue
+        if _HEX_HASH_RE.match(part):
+            # Opaque hash, not a name. Skip and try the next parent.
             continue
         return _clean_dir_name(part)
 

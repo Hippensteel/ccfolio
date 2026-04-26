@@ -96,8 +96,49 @@ OPENAI_PRICING: dict[str, dict[str, float]] = {
     },
 }
 
+# Gemini pricing per million tokens (USD)
+# Source: https://ai.google.dev/gemini-api/docs/pricing
+# Updated: 2026-04-26
+# Note: gemini-3.1-pro-preview has tiered pricing — $2/$12 per Mtok for prompts
+# <=200k tokens, $4/$18 for prompts >200k. Most individual chat turns stay under
+# 200k, so we use the low tier. Long-context single prompts will underestimate.
+# `customtools` variant uses the same base model and pricing.
+GEMINI_PRICING: dict[str, dict[str, float]] = {
+    "gemini-3-pro-preview": {
+        "input": 2.00,
+        "output": 12.00,
+        "cache_creation": 0.0,
+        "cache_read": 0.20,
+    },
+    "gemini-3.1-pro-preview": {
+        "input": 2.00,
+        "output": 12.00,
+        "cache_creation": 0.0,
+        "cache_read": 0.20,
+    },
+    "gemini-3.1-pro-preview-customtools": {
+        "input": 2.00,
+        "output": 12.00,
+        "cache_creation": 0.0,
+        "cache_read": 0.20,
+    },
+    "gemini-3-flash-preview": {
+        "input": 0.50,
+        "output": 3.00,
+        "cache_creation": 0.0,
+        "cache_read": 0.05,
+    },
+    "gemini-2.5-flash": {
+        "input": 0.30,
+        "output": 2.50,
+        "cache_creation": 0.0,
+        "cache_read": 0.03,
+    },
+}
+
 # Merge all pricing
 MODEL_PRICING.update(OPENAI_PRICING)
+MODEL_PRICING.update(GEMINI_PRICING)
 
 # Alias mapping for model families
 MODEL_FAMILY: dict[str, str] = {}
@@ -117,6 +158,12 @@ for model_id in MODEL_PRICING:
         MODEL_FAMILY[model_id] = "o3"
     elif lower.startswith("o4"):
         MODEL_FAMILY[model_id] = "o4"
+    elif "gemini" in lower and "pro" in lower:
+        MODEL_FAMILY[model_id] = "Gemini Pro"
+    elif "gemini" in lower and "flash" in lower:
+        MODEL_FAMILY[model_id] = "Gemini Flash"
+    elif "gemini" in lower:
+        MODEL_FAMILY[model_id] = "Gemini"
 
 
 def get_model_family(model_id: str) -> str:
@@ -139,6 +186,12 @@ def get_model_family(model_id: str) -> str:
         return "o3"
     elif lower.startswith("o4"):
         return "o4"
+    elif "gemini" in lower and "pro" in lower:
+        return "Gemini Pro"
+    elif "gemini" in lower and "flash" in lower:
+        return "Gemini Flash"
+    elif "gemini" in lower:
+        return "Gemini"
     return "Unknown"
 
 

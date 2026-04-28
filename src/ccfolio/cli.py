@@ -171,6 +171,12 @@ def update(ctx: click.Context) -> None:
         )
 
     # Export changed sessions
+    if not config.obsidian.auto_export:
+        console.print(
+            "[dim]auto_export disabled in config — sessions indexed in DB only. "
+            "Use a save-session skill or `ccfolio export <id>` to write markdown.[/dim]"
+        )
+        return
     output_dir = config.get_output_path()
     if not output_dir:
         console.print("[dim]No vault configured, skipping export.[/dim]")
@@ -470,7 +476,7 @@ def export(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     if session_id and not export_all:
-        # Single session export
+        # Single session export — always allowed regardless of auto_export
         resolved = db.resolve_session_id(session_id)
         if not resolved:
             console.print(f"[red]Session not found: {session_id}[/red]")
@@ -480,7 +486,13 @@ def export(
         _export_one(record, output_dir, config, db, redact=redact_paths)
         return
 
-    # Batch export
+    # Batch export — gated by auto_export
+    if not config.obsidian.auto_export:
+        console.print(
+            "[yellow]auto_export disabled in config. Use `ccfolio export <session_id>` "
+            "for single-session export, or set [obsidian] auto_export = true to re-enable.[/yellow]"
+        )
+        return
     if force:
         # Force: re-export everything matching filters
         sessions = db.list_sessions(

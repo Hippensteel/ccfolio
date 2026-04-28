@@ -34,6 +34,12 @@ class ObsidianConfig:
     tool_calls_collapsed: bool = True
     default_tags: list[str] = field(default_factory=lambda: ["Claude-Session"])
     subagent_display: str = "summary"  # inline | linked | summary
+    # When False, ccfolio still indexes sessions in the DB (so cost/list/search
+    # queries work) but does not auto-export markdown to the vault. Single-
+    # session export by ID (`ccfolio export <id>`) still works. Use this when
+    # you want explicit opt-in capture via a save-session skill instead of
+    # bulk capture-and-filter.
+    auto_export: bool = True
 
 
 @dataclass
@@ -124,7 +130,7 @@ class Config:
                 for key in [
                     "output_dir", "filename_template", "path_display",
                     "tool_result_max_length", "tool_calls_collapsed",
-                    "default_tags", "subagent_display",
+                    "default_tags", "subagent_display", "auto_export",
                 ]:
                     if key in obs:
                         setattr(config.obsidian, key, obs[key])

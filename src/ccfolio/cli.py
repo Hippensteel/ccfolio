@@ -502,37 +502,35 @@ def export(
         console.print("[dim]No sessions need exporting.[/dim]")
         return
 
-    # Apply min_user_turns filter (skip background-agent runs etc.)
-    # Single-session export (`ccfolio export <id>`) is exempt — that path
-    # returns early above. Filter only the batch path.
+    # min_user_turns filtering happens inside _export_one after parsing,
+    # because the DB's user_message_count counts ALL user-role events
+    # (including tool-result returns), while the markdown only renders
+    # turns with actual human-typed text. Filtering on the DB count
+    # underestimates background agents that do lots of tool work.
     min_turns = config.filter.min_user_turns
-    filtered_out = 0
-    if min_turns > 0:
-        kept = []
-        for s in sessions:
-            if (s.get("user_message_count") or 0) < min_turns:
-                filtered_out += 1
-                # Mark as exported so we don't reconsider on every run
-                db.mark_exported(s["session_id"])
-            else:
-                kept.append(s)
-        sessions = kept
-        if filtered_out:
-            console.print(
-                f"[dim]Filtered {filtered_out} sessions below "
-                f"min_user_turns={min_turns} threshold[/dim]"
-            )
 
     exported = 0
+    filtered = 0
     errors = 0
     for record in sessions:
         try:
-            _export_one(record, output_dir, config, db, redact=redact_paths)
+            wrote = _export_one(
+                record, output_dir, config, db, redact=redact_paths,
+                min_user_turns=min_turns,
+            )
             db.mark_exported(record["session_id"])
-            exported += 1
+            if wrote:
+                exported += 1
+            else:
+                filtered += 1
         except Exception as e:
             errors += 1
             console.print(f"[red]Error exporting {record['session_id'][:8]}: {e}[/red]")
+    if filtered:
+        console.print(
+            f"[dim]Filtered {filtered} sessions below "
+            f"min_user_turns={min_turns} threshold[/dim]"
+        )
 
     console.print(
         f"[green]Exported {exported} sessions[/green]"
@@ -541,12 +539,23 @@ def export(
     )
 
 
-def _export_one(record: dict, output_dir: Path, config: Config, db: Database, redact: bool = False) -> None:
-    """Export a single session from its database record."""
+def _export_one(
+    record: dict,
+    output_dir: Path,
+    config: Config,
+    db: Database,
+    redact: bool = False,
+    min_user_turns: int = 0,
+) -> bool:
+    """Export a single session from its database record.
+
+    Returns True if a markdown file was written, False if the session was
+    filtered out (or its source file is missing).
+    """
     source = record["source_file"]
     if not Path(source).exists():
         console.print(f"[yellow]Source missing: {source}[/yellow]")
-        return
+        return False
 
     source_cli = record.get("source_cli", "claude-code")
 
@@ -578,6 +587,18 @@ def _export_one(record: dict, output_dir: Path, config: Config, db: Database, re
     session.summary = record["summary"] or session.summary
     session.custom_title = record["custom_title"] or session.custom_title
 
+    # Filter: count actual human-typed user prompts (turns with role=user
+    # and non-empty text_content), not the DB's user_message_count field
+    # which also counts tool-result returns. This matches what render_turn
+    # in markdown.py treats as a real "### User" header.
+    if min_user_turns > 0:
+        human_prompts = sum(
+            1 for t in session.turns
+            if t.role == "user" and t.text_content.strip()
+        )
+        if human_prompts < min_user_turns:
+            return False
+
     subagents = db.get_agents_for_session(record["session_id"])
 
     path = export_session(
@@ -593,6 +614,7 @@ def _export_one(record: dict, output_dir: Path, config: Config, db: Database, re
         source_cli=source_cli,
     )
     console.print(f"  [green]Exported:[/green] {path.name}")
+    return True
 
 
 # ── rename ───────────────────────────────────────────────────────────

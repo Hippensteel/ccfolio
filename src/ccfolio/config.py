@@ -45,16 +45,26 @@ class ExportConfig:
 class FilterConfig:
     """Filter sessions out of vault export.
 
-    `min_user_turns` skips sessions whose `user_message_count` is below the
-    threshold. Background-agent runs are typically 1 user turn (the kickoff
-    prompt) followed by autonomous tool work; real conversations have multiple
-    back-and-forth turns. Default 0 = no filtering (preserve prior behavior).
+    Three OR-combined signals — a session passes (gets exported) if it meets
+    ANY of these thresholds. Sessions that fail all three are filtered.
+
+    - `min_user_turns`: minimum human-typed user turns. Multi-turn conversations
+      are real chats. Background agents typically have 1 turn.
+    - `min_first_prompt_chars`: minimum length of the first user prompt.
+      Substantive single-shot work (long prompt → autonomous → exit) typically
+      has a long first prompt; agent triggers are short.
+    - `min_cost_usd`: minimum estimated cost. Real work tends to cost more
+      than ping-style agent runs.
+
+    A threshold of 0 disables that signal. If all three are 0, no filtering.
 
     Filtering is applied at export time, not sync time — sessions are still
     written to the DB so cost/usage queries see them, just not exported as
     markdown to the vault.
     """
     min_user_turns: int = 0
+    min_first_prompt_chars: int = 0
+    min_cost_usd: float = 0.0
 
 
 @dataclass
@@ -128,6 +138,10 @@ class Config:
             if filt:
                 if "min_user_turns" in filt:
                     config.filter.min_user_turns = int(filt["min_user_turns"])
+                if "min_first_prompt_chars" in filt:
+                    config.filter.min_first_prompt_chars = int(filt["min_first_prompt_chars"])
+                if "min_cost_usd" in filt:
+                    config.filter.min_cost_usd = float(filt["min_cost_usd"])
 
             sources = data.get("sources", {})
             if sources:

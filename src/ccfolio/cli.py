@@ -502,12 +502,11 @@ def export(
         console.print("[dim]No sessions need exporting.[/dim]")
         return
 
-    # min_user_turns filtering happens inside _export_one after parsing,
-    # because the DB's user_message_count counts ALL user-role events
-    # (including tool-result returns), while the markdown only renders
-    # turns with actual human-typed text. Filtering on the DB count
-    # underestimates background agents that do lots of tool work.
-    min_turns = config.filter.min_user_turns
+    # Filtering happens inside _export_one after parsing, because the DB's
+    # user_message_count counts ALL user-role events (including tool-result
+    # returns), while what we actually want is human-typed turns. We also
+    # need first-prompt length and cost from the parsed Session.
+    f = config.filter
 
     exported = 0
     filtered = 0
@@ -516,7 +515,9 @@ def export(
         try:
             wrote = _export_one(
                 record, output_dir, config, db, redact=redact_paths,
-                min_user_turns=min_turns,
+                min_user_turns=f.min_user_turns,
+                min_first_prompt_chars=f.min_first_prompt_chars,
+                min_cost_usd=f.min_cost_usd,
             )
             db.mark_exported(record["session_id"])
             if wrote:
@@ -528,8 +529,9 @@ def export(
             console.print(f"[red]Error exporting {record['session_id'][:8]}: {e}[/red]")
     if filtered:
         console.print(
-            f"[dim]Filtered {filtered} sessions below "
-            f"min_user_turns={min_turns} threshold[/dim]"
+            f"[dim]Filtered {filtered} sessions failing all of: "
+            f"turns>={f.min_user_turns}, prompt>={f.min_first_prompt_chars} chars, "
+            f"cost>=${f.min_cost_usd}[/dim]"
         )
 
     console.print(
@@ -546,6 +548,8 @@ def _export_one(
     db: Database,
     redact: bool = False,
     min_user_turns: int = 0,
+    min_first_prompt_chars: int = 0,
+    min_cost_usd: float = 0.0,
 ) -> bool:
     """Export a single session from its database record.
 
@@ -587,16 +591,30 @@ def _export_one(
     session.summary = record["summary"] or session.summary
     session.custom_title = record["custom_title"] or session.custom_title
 
-    # Filter: count actual human-typed user prompts (turns with role=user
-    # and non-empty text_content), not the DB's user_message_count field
-    # which also counts tool-result returns. This matches what render_turn
-    # in markdown.py treats as a real "### User" header.
-    if min_user_turns > 0:
-        human_prompts = sum(
-            1 for t in session.turns
+    # Filter: a session passes if it meets ANY active threshold.
+    # Active means threshold > 0 (or > 0.0 for cost). If all three are 0,
+    # no filtering. We count human-typed turns rather than the DB's
+    # user_message_count because that field also counts tool-result events.
+    any_active = (
+        min_user_turns > 0
+        or min_first_prompt_chars > 0
+        or min_cost_usd > 0.0
+    )
+    if any_active:
+        human_turns = [
+            t for t in session.turns
             if t.role == "user" and t.text_content.strip()
+        ]
+        n_human = len(human_turns)
+        fp_len = len(human_turns[0].text_content.strip()) if human_turns else 0
+        cost = session.estimated_cost_usd or 0.0
+
+        passes = (
+            (min_user_turns > 0 and n_human >= min_user_turns)
+            or (min_first_prompt_chars > 0 and fp_len >= min_first_prompt_chars)
+            or (min_cost_usd > 0.0 and cost >= min_cost_usd)
         )
-        if human_prompts < min_user_turns:
+        if not passes:
             return False
 
     subagents = db.get_agents_for_session(record["session_id"])

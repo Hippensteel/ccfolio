@@ -5,22 +5,42 @@ from __future__ import annotations
 from ccfolio.models import TokenUsage
 
 # Pricing per million tokens (USD)
-# Updated: 2026-02-24
+# Source: https://platform.claude.com/docs/en/docs/about-claude/pricing
+# Updated: 2026-04-28 — verified live. NOTE: previous file had Opus at $15/$75
+# (the old 4.1-and-prior rate). Anthropic dropped Opus 4.5+ to $5/$25 and
+# Haiku 4.5 to $1/$5. Cost estimates prior to this update were ~3x too high
+# for any Opus 4.5/4.6/4.7 work.
+#
+# cache_creation = 5-minute write multiplier (1.25x base input)
+# cache_read = 0.1x base input
 MODEL_PRICING: dict[str, dict[str, float]] = {
-    # Opus
+    # Opus 4.5+ — same price tier
+    "claude-opus-4-7": {
+        "input": 5.00,
+        "output": 25.00,
+        "cache_creation": 6.25,
+        "cache_read": 0.50,
+    },
     "claude-opus-4-6": {
-        "input": 15.00,
-        "output": 75.00,
-        "cache_creation": 18.75,
-        "cache_read": 1.50,
+        "input": 5.00,
+        "output": 25.00,
+        "cache_creation": 6.25,
+        "cache_read": 0.50,
     },
     "claude-opus-4-5-20251101": {
+        "input": 5.00,
+        "output": 25.00,
+        "cache_creation": 6.25,
+        "cache_read": 0.50,
+    },
+    # Opus 4.1 and earlier — old higher tier (kept for any historical sessions)
+    "claude-opus-4-1": {
         "input": 15.00,
         "output": 75.00,
         "cache_creation": 18.75,
         "cache_read": 1.50,
     },
-    # Sonnet
+    # Sonnet 4-series
     "claude-sonnet-4-6": {
         "input": 3.00,
         "output": 15.00,
@@ -35,22 +55,43 @@ MODEL_PRICING: dict[str, dict[str, float]] = {
     },
     # Haiku
     "claude-haiku-4-5-20251001": {
-        "input": 0.80,
-        "output": 4.00,
-        "cache_creation": 1.00,
-        "cache_read": 0.08,
+        "input": 1.00,
+        "output": 5.00,
+        "cache_creation": 1.25,
+        "cache_read": 0.10,
     },
 }
 
 # OpenAI pricing per million tokens (USD)
-# Updated: 2026-04-04
+# Source: https://developers.openai.com/api/docs/pricing
+# Updated: 2026-04-28 — added gpt-5.5, gpt-5.5-pro, gpt-5.3-codex; corrected
+# gpt-5.4 output rate ($10 → $15) and cache_read ($1.25 → $0.25). Older 5.2
+# entries kept at original rates; current pricing page no longer lists them.
 # Note: Codex CLI reasoning_output_tokens are added to output_tokens before costing
 OPENAI_PRICING: dict[str, dict[str, float]] = {
+    "gpt-5.5": {
+        "input": 5.00,
+        "output": 30.00,
+        "cache_creation": 0.0,
+        "cache_read": 0.50,
+    },
+    "gpt-5.5-pro": {
+        "input": 30.00,
+        "output": 180.00,
+        "cache_creation": 0.0,
+        "cache_read": 0.0,
+    },
     "gpt-5.4": {
         "input": 2.50,
-        "output": 10.00,
+        "output": 15.00,
         "cache_creation": 0.0,
-        "cache_read": 1.25,
+        "cache_read": 0.25,
+    },
+    "gpt-5.3-codex": {
+        "input": 1.75,
+        "output": 14.00,
+        "cache_creation": 0.0,
+        "cache_read": 0.175,
     },
     "gpt-5.2": {
         "input": 2.50,

@@ -34,12 +34,12 @@ class ObsidianConfig:
     tool_calls_collapsed: bool = True
     default_tags: list[str] = field(default_factory=lambda: ["Claude-Session"])
     subagent_display: str = "summary"  # inline | linked | summary
-    # When False, ccfolio still indexes sessions in the DB (so cost/list/search
-    # queries work) but does not auto-export markdown to the vault. Single-
-    # session export by ID (`ccfolio export <id>`) still works. Use this when
-    # you want explicit opt-in capture via a save-session skill instead of
-    # bulk capture-and-filter.
-    auto_export: bool = True
+    # Per-source list of CLIs whose sessions get auto-exported to the vault.
+    # Empty list = no auto-export (DB still indexes everything for cost/search).
+    # Example: ["codex", "gemini"] auto-exports those, leaves Claude Code to
+    # an explicit save-session skill. Single-session export by ID
+    # (`ccfolio export <id>`) ignores this list.
+    auto_export_sources: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -130,10 +130,16 @@ class Config:
                 for key in [
                     "output_dir", "filename_template", "path_display",
                     "tool_result_max_length", "tool_calls_collapsed",
-                    "default_tags", "subagent_display", "auto_export",
+                    "default_tags", "subagent_display", "auto_export_sources",
                 ]:
                     if key in obs:
                         setattr(config.obsidian, key, obs[key])
+                # Back-compat: old auto_export bool maps to all-or-none list.
+                if "auto_export" in obs and "auto_export_sources" not in obs:
+                    if obs["auto_export"]:
+                        config.obsidian.auto_export_sources = [
+                            "claude-code", "codex", "gemini"
+                        ]
 
             exp = data.get("export", {})
             if exp:

@@ -170,10 +170,11 @@ def update(ctx: click.Context) -> None:
             f"[green]Agents:[/green] {agent_stats['new']} new, {agent_stats['updated']} updated"
         )
 
-    # Export changed sessions
-    if not config.obsidian.auto_export:
+    # Export changed sessions — only for sources in auto_export_sources
+    allowed = set(config.obsidian.auto_export_sources)
+    if not allowed:
         console.print(
-            "[dim]auto_export disabled in config — sessions indexed in DB only. "
+            "[dim]auto_export_sources empty in config — sessions indexed in DB only. "
             "Use a save-session skill or `ccfolio export <id>` to write markdown.[/dim]"
         )
         return
@@ -185,15 +186,25 @@ def update(ctx: click.Context) -> None:
     sessions = db.get_sessions_needing_export(
         exclude_projects=config.export.exclude_projects or None
     )
+    sessions = [s for s in sessions if s.get("source_cli") in allowed]
     if not sessions:
         return
 
     exported = 0
+    skipped_filter = 0
     for record in sessions:
         try:
-            _export_one(record, output_dir, config, db)
+            wrote = _export_one(
+                record, output_dir, config, db,
+                min_user_turns=config.filter.min_user_turns,
+                min_first_prompt_chars=config.filter.min_first_prompt_chars,
+                min_cost_usd=config.filter.min_cost_usd,
+            )
             db.mark_exported(record["session_id"])
-            exported += 1
+            if wrote:
+                exported += 1
+            else:
+                skipped_filter += 1
         except Exception:
             pass
 
@@ -486,11 +497,12 @@ def export(
         _export_one(record, output_dir, config, db, redact=redact_paths)
         return
 
-    # Batch export — gated by auto_export
-    if not config.obsidian.auto_export:
+    # Batch export — gated by auto_export_sources
+    allowed_batch = set(config.obsidian.auto_export_sources)
+    if not allowed_batch:
         console.print(
-            "[yellow]auto_export disabled in config. Use `ccfolio export <session_id>` "
-            "for single-session export, or set [obsidian] auto_export = true to re-enable.[/yellow]"
+            "[yellow]auto_export_sources empty in config. Use `ccfolio export <session_id>` "
+            "for single-session export, or add sources to [obsidian] auto_export_sources to re-enable.[/yellow]"
         )
         return
     if force:
@@ -509,6 +521,8 @@ def export(
             sessions = [s for s in sessions if s["is_favorited"]]
         if after:
             sessions = [s for s in sessions if s.get("created_at", "") >= after]
+    # Apply per-source allowlist for batch (single-session export ignores this).
+    sessions = [s for s in sessions if s.get("source_cli") in allowed_batch]
 
     if not sessions:
         console.print("[dim]No sessions need exporting.[/dim]")
